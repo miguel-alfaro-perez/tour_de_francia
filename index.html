@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Le Tour de France — La Gran Boucle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Source+Serif+4:ital,wght@0,300;0,600;1,300&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/scrollama/3.2.0/scrollama.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --amarillo: #FFD700;
+      --amarilloclaro: #FFF176;
+      --rojo:     #E53935;
+      --azul:     #1565C0;
+      --verde:    #2E7D32;
+      --blanco:   #F5F5F0;
+      --oscuro:   #0D0D0D;
+      --gris1:    #1A1A1A;
+      --gris2:    #252525;
+      --gris3:    #333333;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { font-family:'Source Serif 4',serif; background:var(--oscuro); color:var(--blanco); overflow-x:hidden; }
+
+    /* ─── HERO ─── */
+    #hero {
+      height:100vh; position:relative; display:flex; flex-direction:column;
+      align-items:center; justify-content:center; text-align:center; overflow:hidden;
+      background: linear-gradient(160deg, #0a0a0a 0%, #1a1200 40%, #0a0800 100%);
+    }
+    #hero::before {
+      content:''; position:absolute; inset:0;
+      background: radial-gradient(ellipse at 50% 80%, rgba(255,215,0,0.12) 0%, transparent 60%),
+                  radial-gradient(ellipse at 20% 50%, rgba(229,57,53,0.08) 0%, transparent 40%);
+    }
+    .maillot-bg {
+      position:absolute; font-size:40vw; opacity:0.03; font-family:'Bebas Neue',sans-serif;
+      color:var(--amarillo); top:50%; left:50%; transform:translate(-50%,-50%);
+      white-space:nowrap; pointer-events:none; user-select:none;
+    }
+    .hero-inner { position:relative; z-index:2; padding:2rem; max-width:900px; }
+    .hero-tag {
+      font-size:0.7rem; letter-spacing:0.6em; text-transform:uppercase;
+      color:var(--amarillo); margin-bottom:1.5rem;
+      opacity:0; animation: up 1s ease 0.3s forwards;
+    }
+    .hero-title {
+      font-family:'Bebas Neue',sans-serif;
+      font-size: clamp(4rem, 12vw, 9rem);
+      line-height:0.9; letter-spacing:0.02em;
+      color:var(--blanco);
+      text-shadow: 0 0 80px rgba(255,215,0,0.4);
+      opacity:0; animation: up 1s ease 0.5s forwards;
+    }
+    .hero-title span { color:var(--amarillo); }
+    .hero-year {
+      font-family:'Bebas Neue',sans-serif; font-size:5rem; color:rgba(255,215,0,0.2);
+      letter-spacing:0.1em; margin-top:-1rem;
+      opacity:0; animation: up 1s ease 0.7s forwards;
+    }
+    .hero-sub {
+      font-size:1rem; font-weight:300; font-style:italic; line-height:1.9;
+      color:rgba(245,245,240,0.65); max-width:520px; margin:1.5rem auto 0;
+      opacity:0; animation: up 1s ease 0.9s forwards;
+    }
+    .hero-stats {
+      display:flex; gap:3rem; justify-content:center; margin-top:2.5rem;
+      opacity:0; animation: up 1s ease 1.1s forwards;
+    }
+    .hstat { text-align:center; }
+    .hstat .n { font-family:'Bebas Neue',sans-serif; font-size:2.5rem; color:var(--amarillo); line-height:1; }
+    .hstat .l { font-size:0.65rem; letter-spacing:0.2em; text-transform:uppercase; color:rgba(245,245,240,0.4); margin-top:0.3rem; }
+    .scroll-hint {
+      position:absolute; bottom:2rem; left:50%; transform:translateX(-50%);
+      display:flex; flex-direction:column; align-items:center; gap:0.5rem;
+      opacity:0; animation: up 1s ease 1.5s forwards; cursor:pointer;
+    }
+    .scroll-hint span { font-size:0.6rem; letter-spacing:0.4em; text-transform:uppercase; color:rgba(255,215,0,0.5); }
+    .arrow { width:16px; height:16px; border-right:1px solid var(--amarillo); border-bottom:1px solid var(--amarillo); transform:rotate(45deg); animation:bounce 1.6s ease-in-out infinite; }
+    @keyframes bounce { 0%,100%{transform:rotate(45deg) translateY(0)} 50%{transform:rotate(45deg) translateY(6px)} }
+    @keyframes up { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+
+    /* ─── STORYTELLING ─── */
+    #story { display:flex; position:relative; }
+    #map-wrap { position:sticky; top:0; width:55%; height:100vh; flex-shrink:0; }
+    #map { width:100%; height:100%; }
+
+    /* filtros */
+    #filters {
+      position:absolute; top:1rem; left:50%; transform:translateX(-50%);
+      z-index:1000; display:flex; gap:0.35rem;
+      background:rgba(13,13,13,0.93); border:1px solid rgba(255,215,0,0.2);
+      padding:0.45rem 0.7rem; border-radius:3px; backdrop-filter:blur(12px);
+    }
+    .fbtn {
+      padding:0.28rem 0.75rem; border:1px solid transparent; border-radius:2px;
+      font-family:'Source Serif 4',serif; font-size:0.7rem; font-weight:600;
+      letter-spacing:0.07em; text-transform:uppercase; cursor:pointer;
+      transition:all 0.2s; background:transparent; color:rgba(245,245,240,0.4);
+    }
+    .fbtn.on { color:var(--blanco); }
+    .fbtn[data-f="todos"].on    { background:rgba(255,215,0,0.15); border-color:var(--amarillo); }
+    .fbtn[data-f="puertos"].on  { background:rgba(229,57,53,0.2);  border-color:var(--rojo); }
+    .fbtn[data-f="etapas"].on   { background:rgba(21,101,192,0.2); border-color:var(--azul); }
+    .fbtn[data-f="historia"].on { background:rgba(46,125,50,0.2);  border-color:var(--verde); }
+
+    /* narrativa */
+    #narrative { width:45%; background:var(--gris1); border-left:1px solid rgba(255,215,0,0.08); }
+    .step { min-height:85vh; display:flex; align-items:center; padding:4rem 2.5rem; opacity:0.3; transition:opacity 0.5s ease; }
+    .step.active { opacity:1; }
+    .step-inner { max-width:400px; }
+    .ch-label { font-size:0.65rem; letter-spacing:0.5em; text-transform:uppercase; color:var(--amarillo); margin-bottom:0.9rem; }
+    .step h2 { font-family:'Bebas Neue',sans-serif; font-size:2.6rem; letter-spacing:0.03em; line-height:1.05; color:var(--blanco); margin-bottom:1rem; }
+    .step p { font-size:0.93rem; font-weight:300; line-height:1.9; color:rgba(245,245,240,0.75); margin-bottom:0.8rem; }
+    .callout {
+      background:rgba(255,215,0,0.07); border-left:3px solid var(--amarillo);
+      padding:0.8rem 1rem; margin:1rem 0; font-style:italic;
+      font-size:1.05rem; color:var(--amarillo); line-height:1.5;
+    }
+    .chips { display:flex; flex-wrap:wrap; gap:0.35rem; margin-top:0.8rem; }
+    .chip { padding:0.2rem 0.65rem; border-radius:2px; font-size:0.7rem; font-weight:600; letter-spacing:0.05em; }
+    .chip-hc  { background:rgba(229,57,53,0.25); border:1px solid rgba(229,57,53,0.5); color:#ff8a80; }
+    .chip-1   { background:rgba(255,215,0,0.15); border:1px solid rgba(255,215,0,0.4); color:#FFD700; }
+    .chip-mont{ background:rgba(21,101,192,0.25); border:1px solid rgba(21,101,192,0.5); color:#90caf9; }
+    .chip-his { background:rgba(46,125,50,0.2);  border:1px solid rgba(46,125,50,0.5);  color:#a5d6a7; }
+
+    /* ─── ESTADÍSTICAS ─── */
+    #stats { background:var(--oscuro); padding:5rem 3rem; border-top:1px solid rgba(255,215,0,0.1); }
+    .stats-head { text-align:center; margin-bottom:3rem; }
+    .stats-head h2 { font-family:'Bebas Neue',sans-serif; font-size:3rem; letter-spacing:0.04em; color:var(--blanco); }
+    .stats-head p  { font-size:0.85rem; font-weight:300; font-style:italic; color:rgba(245,245,240,0.4); margin-top:0.3rem; }
+    .charts-grid { display:grid; grid-template-columns:1fr 1fr; gap:1.8rem; max-width:1060px; margin:0 auto; }
+    .ccard { background:var(--gris2); border:1px solid rgba(255,215,0,0.08); border-radius:4px; padding:1.8rem; }
+    .ccard h3 { font-family:'Bebas Neue',sans-serif; font-size:1.3rem; letter-spacing:0.05em; color:var(--amarillo); margin-bottom:0.2rem; }
+    .ccard .cdesc { font-size:0.74rem; font-weight:300; color:rgba(245,245,240,0.35); margin-bottom:1.2rem; font-style:italic; }
+
+    /* ─── TABLA ETAPAS ─── */
+    #etapas-section { background:var(--gris1); padding:5rem 3rem; border-top:1px solid rgba(255,215,0,0.08); }
+    .etapas-head { text-align:center; margin-bottom:2.5rem; }
+    .etapas-head h2 { font-family:'Bebas Neue',sans-serif; font-size:2.8rem; letter-spacing:0.04em; color:var(--blanco); }
+    .etapas-head p  { font-size:0.85rem; font-weight:300; font-style:italic; color:rgba(245,245,240,0.4); }
+    .etapas-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:0.8rem; max-width:1100px; margin:0 auto; }
+    .etapa-card {
+      background:rgba(0,0,0,0.3); border:1px solid rgba(255,215,0,0.08); border-radius:3px;
+      padding:1rem 1.2rem; cursor:pointer; transition:all 0.2s; position:relative; overflow:hidden;
+    }
+    .etapa-card:hover { background:rgba(255,215,0,0.06); border-color:rgba(255,215,0,0.25); transform:translateY(-2px); }
+    .etapa-num { font-family:'Bebas Neue',sans-serif; font-size:1.8rem; color:rgba(255,215,0,0.25); line-height:1; }
+    .etapa-nombre { font-size:0.8rem; font-weight:600; color:var(--blanco); margin:0.3rem 0 0.2rem; line-height:1.3; }
+    .etapa-info { font-size:0.72rem; color:rgba(245,245,240,0.45); }
+    .etapa-ganador { font-size:0.72rem; color:var(--amarillo); margin-top:0.4rem; font-style:italic; }
+    .etapa-tipo-badge {
+      position:absolute; top:0.5rem; right:0.6rem; font-size:0.6rem; font-weight:700;
+      letter-spacing:0.08em; padding:0.15rem 0.4rem; border-radius:2px;
+    }
+    .badge-mont  { background:rgba(229,57,53,0.3); color:#ff8a80; }
+    .badge-llana { background:rgba(21,101,192,0.3); color:#90caf9; }
+    .badge-cri   { background:rgba(46,125,50,0.3);  color:#a5d6a7; }
+    .badge-paves { background:rgba(120,80,0,0.4);   color:#ffcc80; }
+    .badge-ondulada { background:rgba(100,0,100,0.3); color:#ce93d8; }
+
+    /* ─── PUERTOS TABLE ─── */
+    #puertos-section { background:var(--oscuro); padding:5rem 3rem; border-top:1px solid rgba(255,215,0,0.08); }
+    .puertos-head { text-align:center; margin-bottom:2.5rem; }
+    .puertos-head h2 { font-family:'Bebas Neue',sans-serif; font-size:2.8rem; letter-spacing:0.04em; color:var(--blanco); }
+    .puertos-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:1rem; max-width:1100px; margin:0 auto; }
+    .puerto-card {
+      background:var(--gris2); border:1px solid rgba(255,215,0,0.08); border-radius:4px;
+      padding:1.3rem; cursor:pointer; transition:all 0.2s; position:relative;
+    }
+    .puerto-card:hover { border-color:rgba(229,57,53,0.4); transform:translateY(-2px); background:rgba(229,57,53,0.05); }
+    .puerto-card::before { content:''; position:absolute; top:0;left:0; width:3px; height:100%; background:var(--rojo); }
+    .puerto-cat { font-size:0.65rem; letter-spacing:0.2em; text-transform:uppercase; color:var(--rojo); margin-bottom:0.4rem; }
+    .puerto-nombre { font-family:'Bebas Neue',sans-serif; font-size:1.4rem; letter-spacing:0.03em; color:var(--blanco); margin-bottom:0.4rem; }
+    .puerto-stats { display:flex; gap:1.2rem; margin-bottom:0.6rem; }
+    .pstat .v { font-family:'Bebas Neue',sans-serif; font-size:1.2rem; color:var(--amarillo); }
+    .pstat .u { font-size:0.6rem; letter-spacing:0.1em; text-transform:uppercase; color:rgba(245,245,240,0.35); }
+    .puerto-record { font-size:0.75rem; color:rgba(245,245,240,0.5); font-style:italic; }
+
+    /* ─── FOOTER ─── */
+    footer { background:#080808; text-align:center; padding:3rem 2rem; border-top:1px solid rgba(255,215,0,0.08); }
+    footer .ftitle { font-family:'Bebas Neue',sans-serif; font-size:2rem; letter-spacing:0.05em; color:var(--amarillo); margin-bottom:0.5rem; }
+    footer p { font-size:0.75rem; font-weight:300; color:rgba(245,245,240,0.25); letter-spacing:0.1em; line-height:2; }
+
+    /* ─── POPUP LEAFLET ─── */
+    .leaflet-popup-content-wrapper { background:#111; color:var(--blanco); border:1px solid rgba(255,215,0,0.3); border-radius:3px; box-shadow:0 12px 40px rgba(0,0,0,0.9); }
+    .leaflet-popup-tip { background:#111; }
+    .leaflet-popup-content { margin:1rem 1.2rem; max-width:290px; }
+    .pop h3 { font-family:'Bebas Neue',sans-serif; font-size:1.3rem; letter-spacing:0.03em; color:var(--blanco); margin-bottom:0.2rem; }
+    .pop .ptag { font-size:0.62rem; letter-spacing:0.15em; text-transform:uppercase; color:var(--amarillo); margin-bottom:0.6rem; }
+    .pop p { font-size:0.78rem; line-height:1.65; color:rgba(245,245,240,0.8); margin-bottom:0.3rem; }
+    .pop .pquote { background:rgba(255,215,0,0.07); border-left:2px solid var(--amarillo); padding:0.4rem 0.7rem; font-size:0.78rem; font-style:italic; color:var(--amarillo); margin:0.5rem 0; line-height:1.5; }
+    .pop .pstats { display:flex; gap:1rem; margin:0.5rem 0; }
+    .pop .ps .v { font-family:'Bebas Neue',sans-serif; font-size:1.1rem; color:var(--amarillo); }
+    .pop .ps .u { font-size:0.6rem; text-transform:uppercase; color:rgba(245,245,240,0.35); }
+  </style>
+</head>
+<body>
+
+<!-- ═══ HERO ═══ -->
+<section id="hero">
+  <div class="maillot-bg">TDF</div>
+  <div class="hero-inner">
+    <p class="hero-tag">Narrativa Geoespacial Interactiva &nbsp;·&nbsp; Miguel Alfaro &nbsp;·&nbsp; Febrero 2026</p>
+    <h1 class="hero-title">Le Tour<br>de <span>France</span></h1>
+    <p class="hero-year">2025</p>
+    <p class="hero-sub">La carrera más grande del mundo. Puertos míticos, etapas legendarias y más de 120 años de historia sobre la bicicleta.</p>
+    <div class="hero-stats">
+      <div class="hstat"><div class="n">15</div><div class="l">Puertos Míticos</div></div>
+      <div class="hstat"><div class="n">21</div><div class="l">Etapas 2025</div></div>
+      <div class="hstat"><div class="n">3.320</div><div class="l">Kilómetros</div></div>
+      <div class="hstat"><div class="n">112</div><div class="l">Edición</div></div>
+    </div>
+  </div>
+  <div class="scroll-hint" onclick="document.getElementById('story').scrollIntoView({behavior:'smooth'})">
+    <span>Comenzar</span>
+    <div class="arrow"></div>
+  </div>
+</section>
+
+<!-- ═══ STORYTELLING ═══ -->
+<section id="story">
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div id="filters">
+      <button class="fbtn on"  data-f="todos">Todos</button>
+      <button class="fbtn"     data-f="puertos">🏔 Puertos</button>
+      <button class="fbtn"     data-f="etapas">🚴 Etapas</button>
+      <button class="fbtn"     data-f="historia">⭐ Historia</button>
+    </div>
+  </div>
+
+  <div id="narrative">
+
+    <div class="step" data-step="0" data-lat="46.5" data-lon="3" data-zoom="5">
+      <div class="step-inner">
+        <p class="ch-label">Introducción &nbsp;01</p>
+        <h2>La Gran Boucle</h2>
+        <p>Cada julio, Francia se paraliza. El Tour de Francia, la carrera ciclista más famosa del mundo, convierte las carreteras del país en el mayor escenario deportivo del planeta.</p>
+        <p>En este mapa puedes explorar los <strong>15 puertos más míticos</strong>, las <strong>21 etapas del Tour 2025</strong> y los <strong>momentos históricos</strong> que han forjado la leyenda de la carrera.</p>
+        <div class="callout">112.ª edición · 3.320 km en 2025 · Iniciado en Lille, Francia</div>
+        <div class="chips">
+          <span class="chip chip-hc">🏔 Puertos HC</span>
+          <span class="chip chip-mont">🚴 Etapas 2025</span>
+          <span class="chip chip-his">⭐ Historia</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step" data-step="1" data-lat="50.63" data-lon="3.06" data-zoom="7">
+      <div class="step-inner">
+        <p class="ch-label">Capítulo &nbsp;02</p>
+        <h2>La Grand Départ 2025: Lille</h2>
+        <p>Por primera vez desde 1998, el Tour 2025 comenzó fuera de Francia. Florencia, ciudad de los Médici y el Renacimiento, acogió la salida con una etapa espectacular hacia Rímini.</p>
+        <p>Tadej Pogacar ganó las dos primeras etapas italianas, incluyendo el homenaje a Marco Pantani en Cesenatico. El esloveno llegó al Tour en modo dominador absoluto.</p>
+        <div class="callout">"Pogacar: 4.º Tour · 6 etapas ganadas · Victoria número 100 en Rouen"</div>
+        <div class="chips">
+          <span class="chip chip-mont">Lille - Lille</span>
+          <span class="chip chip-mont">Muro de Bretaña</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step" data-step="2" data-lat="45.09" data-lon="6.07" data-zoom="8">
+      <div class="step-inner">
+        <p class="ch-label">Capítulo &nbsp;03</p>
+        <h2>Alpe d'Huez: las 21 curvas sagradas</h2>
+        <p>Desde 1952, el Alpe d'Huez es el escenario más emblemático del Tour. Sus <strong>21 curvas numeradas</strong> llevan los nombres de los ganadores históricos: Coppi, Merckx, Hinault, Pantani...</p>
+        <p>A 1.860 metros, con una pendiente media del 7,9%, es el "estadio de montaña" del ciclismo. Un millón de aficionados llenan sus curvas cada vez que el Tour llega aquí.</p>
+        <div class="callout">"Record: Marco Pantani, 37:35 (1997). ¿Inmortal?"</div>
+        <div class="chips">
+          <span class="chip chip-hc">HC · 1.860m</span>
+          <span class="chip chip-hc">13.8 km · 7.9%</span>
+          <span class="chip chip-hc">30 veces en el Tour</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step" data-step="3" data-lat="44.17" data-lon="5.28" data-zoom="8">
+      <div class="step-inner">
+        <p class="ch-label">Capítulo &nbsp;04</p>
+        <h2>Mont Ventoux: el Gigante Solitario</h2>
+        <p>Aislado en medio de la Provenza, el Mont Ventoux no forma parte de ninguna cadena montañosa. Por eso es diferente: el viento Mistral puede soplar a 90 km/h, la temperatura cae en picado y las piedras blancas de caliza crean un paisaje lunar imposible.</p>
+        <p>Tom Simpson murió aquí en 1967. Su monumento en la cima, a pocos metros de la antena, recibe bidones y gorras de ciclistas de todo el mundo como ofrenda.</p>
+        <div class="callout">"El Ventoux no perdona. Simpson murió a 1km de la cima."</div>
+        <div class="chips">
+          <span class="chip chip-hc">HC · 1.912m</span>
+          <span class="chip chip-hc">21.5 km · 7.5%</span>
+          <span class="chip chip-his">Tom Simpson · 1967</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step" data-step="4" data-lat="42.91" data-lon="0.15" data-zoom="7">
+      <div class="step-inner">
+        <p class="ch-label">Capítulo &nbsp;05</p>
+        <h2>Los Pirineos: el campo de batalla</h2>
+        <p>En 1910, Henri Desgrange incluyó los Pirineos por primera vez. Fue una locura: los corredores tuvieron que atravesar caminos de montaña sin pavimentar, con barro hasta la rodilla.</p>
+        <p>Octave Lapize, al llegar a la cima del Tourmalet, gritó a los organizadores: <em>"¡Sois unos asesinos!"</em>. Luego siguió pedaleando y ganó el Tour.</p>
+        <p>El <strong>Tourmalet</strong> (2.115m) es el puerto más usado en la historia del Tour: 87 veces. El <strong>Géant des Pyrénées</strong> vigila desde la cima desde el año 2000.</p>
+        <div class="callout">"87 veces en el Tour. El puerto más grande de los Pirineos."</div>
+      </div>
+    </div>
+
+    <div class="step" data-step="5" data-lat="45.06" data-lon="6.41" data-zoom="7">
+      <div class="step-inner">
+        <p class="ch-label">Capítulo &nbsp;06</p>
+        <h2>Los Alpes: el techo de la carrera</h2>
+        <p>El Col du Galibier, a 2.642 metros, es el techo del Tour. Henri Desgrange, al cruzarlo por primera vez en 1911, escribió: <em>"Ante el Galibier me inclino y me quito el sombrero"</em>.</p>
+        <p>En los Alpes se decide el Tour. Aquí atacó Andy Schleck 60km antes de meta en 2011. Aquí Pantani hizo añicos a Ullrich en 1998. Aquí Pogacar selló su dominio en 2024.</p>
+        <div class="callout">"El Galibier, el Telegraphe, la Madeleine... Los Alpes no tienen piedad."</div>
+        <div class="chips">
+          <span class="chip chip-hc">Galibier · 2.642m</span>
+          <span class="chip chip-hc">Izoard · 2.360m</span>
+          <span class="chip chip-hc">Madeleine · 1.993m</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step" data-step="6" data-lat="48.85" data-lon="2.35" data-zoom="8">
+      <div class="step-inner">
+        <p class="ch-label">Capítulo &nbsp;07</p>
+        <h2>París: el regreso a los Campos Elíseos</h2>
+        <p>En 2024, el Tour prescindió por primera vez de los Campos Elíseos de París como escenario del final. La Copa del Mundo de Fútbol Americano y los Juegos Olímpicos lo impidieron.</p>
+        <p>En su lugar, la Costa Azul: una contrarreloj de <strong>34 km entre Mónaco y Niza</strong>. Remco Evenepoel ganó la etapa. Tadej Pogacar se proclamó campeón del Tour 2025 por tercera vez.</p>
+        <div class="callout">"Pogacar: Tour 2020, 2021, 2024 y 2025. A un solo Tour de las leyendas."</div>
+        <div class="chips">
+          <span class="chip chip-mont">Mantes-la-Ville - París</span>
+          <span class="chip chip-his">Wout Van Aert etapa · Pogacar 🏆</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══ GRÁFICOS ═══ -->
+<section id="stats">
+  <div class="stats-head">
+    <h2>LOS NÚMEROS DEL TOUR</h2>
+    <p>Estadísticas de puertos, etapas y dominadores históricos del Tour de Francia</p>
+  </div>
+  <div class="charts-grid">
+    <div class="ccard">
+      <h3>Altitud de Puertos Míticos</h3>
+      <p class="cdesc">Los 10 puertos más altos incluidos en el Tour</p>
+      <canvas id="cAlt" height="220"></canvas>
+    </div>
+    <div class="ccard">
+      <h3>Tipos de Etapa Tour 2025</h3>
+      <p class="cdesc">Distribución por perfil de las 21 etapas</p>
+      <canvas id="cTipo" height="220"></canvas>
+    </div>
+    <div class="ccard">
+      <h3>Pendiente Media por Puerto</h3>
+      <p class="cdesc">Comparativa de dureza media (% de pendiente)</p>
+      <canvas id="cPend" height="220"></canvas>
+    </div>
+    <div class="ccard">
+      <h3>Ganadores Etapas Tour 2025</h3>
+      <p class="cdesc">Quién ganó más etapas en el Tour 2025</p>
+      <canvas id="cGan" height="220"></canvas>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ TABLA ETAPAS ═══ -->
+<section id="etapas-section">
+  <div class="etapas-head">
+    <h2>LAS 21 ETAPAS DEL TOUR 2025</h2>
+    <p>Haz clic en una etapa para localizarla en el mapa</p>
+  </div>
+  <div class="etapas-grid" id="etapasGrid"></div>
+</section>
+
+<!-- ═══ PUERTOS ═══ -->
+<section id="puertos-section">
+  <div class="puertos-head">
+    <h2>LOS 15 PUERTOS MÍTICOS</h2>
+  </div>
+  <div class="puertos-grid" id="puertosGrid"></div>
+</section>
+
+<!-- ═══ FOOTER ═══ -->
+<footer>
+  <p class="ftitle">Le Tour de France</p>
+  <p>Miguel Alfaro &nbsp;·&nbsp; Narrativa Geoespacial Interactiva &nbsp;·&nbsp; 2025</p>
+  <p>Datos: ASO (Amaury Sport Organisation) · Letour.fr · ProCyclingStats</p>
+  <p>Visualización: Leaflet.js · Chart.js · OpenStreetMap · Scrollama.js</p>
+</footer>
+
+<script>
+// ═══════════════════════════════
+// DATOS
+// ═══════════════════════════════
+const DATA = {"puertos": [{"nombre": "Alpe d'Huez", "pais": "Francia", "lat": 45.0922, "lon": 6.0703, "altura": 1860, "longitud_km": 13.8, "desnivel": 1071, "pendiente_media": 7.9, "pendiente_max": 13.0, "categoria": "HC", "departamento": "Isère", "primera_vez": 1952, "veces_en_tour": 30, "record_subida": "Marco Pantani (1997) - 37:35", "ganadores_legendarios": "Fausto Coppi, Joop Zoetemelk, Bernard Hinault, Laurent Fignon, Marco Pantani, Lance Armstrong, Jan Ullrich", "descripcion": "El coloso de los Alpes. Sus 21 curvas numeradas llevan nombres de los ganadores. El ascenso más famoso del ciclismo mundial.", "anecdota": "Sus 21 curvas llevan el nombre de ganadores históricos. La curva 7 se llama 'Pantani' en honor al Pirata. En 1986, Bernard Hinault y Greg LeMond subieron cogidos de la mano en un pacto que nunca se entendió del todo.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Alpe_d%27Huez_2006.jpg/800px-Alpe_d%27Huez_2006.jpg", "url_video": "https://www.youtube.com/watch?v=alpe_dhuez", "tipo": "Puerto", "cadena_mont": "Alpes"}, {"nombre": "Mont Ventoux", "pais": "Francia", "lat": 44.1739, "lon": 5.2786, "altura": 1912, "longitud_km": 21.5, "desnivel": 1617, "pendiente_media": 7.5, "pendiente_max": 12.0, "categoria": "HC", "departamento": "Vaucluse", "primera_vez": 1951, "veces_en_tour": 25, "record_subida": "Iban Mayo (2004) - 55:51", "ganadores_legendarios": "Eddy Merckx, Bernard Thévenet, Charly Gaul, Iban Mayo, Chris Froome", "descripcion": "El Gigante de la Provenza. Sin vegetación en la cima, azotado por el viento Mistral. Uno de los ascensos más duros y solitarios del ciclismo.", "anecdota": "Tom Simpson murió aquí en 1967. Su monumento en la cima recibe ofrendas de bidones y gorras de ciclistas. En 2016, Chris Froome subió corriendo tras romper su bici. El Mistral puede soplar a 90 km/h.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Mont_Ventoux_depuis_Sault.jpg/800px-Mont_Ventoux_depuis_Sault.jpg", "url_video": "https://www.youtube.com/watch?v=mont_ventoux", "tipo": "Puerto", "cadena_mont": "Provenza"}, {"nombre": "Col du Galibier", "pais": "Francia", "lat": 45.0642, "lon": 6.4078, "altura": 2642, "longitud_km": 18.1, "desnivel": 1245, "pendiente_media": 6.9, "pendiente_max": 12.1, "categoria": "HC", "departamento": "Savoie", "primera_vez": 1911, "veces_en_tour": 60, "record_subida": "Marco Pantani (1998) - 45:30 (estimado)", "ganadores_legendarios": "Lucien Buysse, Eddy Merckx, Bernard Hinault, Andy Schleck, Chris Froome", "descripcion": "El techo del Tour. A 2.642m es el puerto más alto del Tour regularmente. Vistas de 360° a los Alpes. Pasa por el Telegraphe como calentamiento.", "anecdota": "En 1911, Emile Georget fue el primero en cruzar su cima en el Tour. En 2011, Andy Schleck atacó aquí en solitario 60km antes de meta. Henri Desgrange dijo: 'ante el Galibier me quito el sombrero'.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Col_du_Galibier_2009.jpg/800px-Col_du_Galibier_2009.jpg", "url_video": "https://www.youtube.com/watch?v=col_galibier", "tipo": "Puerto", "cadena_mont": "Alpes"}, {"nombre": "Col du Tourmalet", "pais": "Francia", "lat": 42.9094, "lon": 0.1456, "altura": 2115, "longitud_km": 19.0, "desnivel": 1404, "pendiente_media": 7.4, "pendiente_max": 10.2, "categoria": "HC", "departamento": "Hautes-Pyrénées", "primera_vez": 1910, "veces_en_tour": 87, "record_subida": "Bjarne Riis (1996) - 48:29", "ganadores_legendarios": "Octave Lapize, Eddy Merckx, Bernard Hinault, Miguel Indurain, Richard Virenque, Thibaut Pinot", "descripcion": "El puerto más utilizado en la historia del Tour. El 'Géant des Pyrénées'. Desde 1910 ha sido el escenario de las batallas más épicas del ciclismo pirenaico.", "anecdota": "En 1910, Octave Lapize insultó a los organizadores mientras subía: '¡Asesinos!'. Miguel Induráin ganó aquí en su primera gran exhibición. La estatua del 'Géant' marca la cima desde 2000.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Col_du_Tourmalet.jpg/800px-Col_du_Tourmalet.jpg", "url_video": "https://www.youtube.com/watch?v=col_tourmalet", "tipo": "Puerto", "cadena_mont": "Pirineos"}, {"nombre": "Col d'Aubisque", "pais": "Francia", "lat": 42.9769, "lon": -0.3375, "altura": 1709, "longitud_km": 16.6, "desnivel": 1190, "pendiente_media": 7.2, "pendiente_max": 13.0, "categoria": "HC", "departamento": "Pyrénées-Atlantiques", "primera_vez": 1910, "veces_en_tour": 75, "record_subida": "Richard Virenque (2002) - 54:05", "ganadores_legendarios": "Octave Lapize, Eddy Merckx, Federico Bahamontes, Richard Virenque", "descripcion": "Compañero inseparable del Tourmalet. Subida por el Soulor con vistas al Circo de Gourette. Puerto clásico pirenaico de gran belleza.", "anecdota": "Octave Lapize fue el primer corredor en cruzarlo en 1910. La carretera al Soulor tiene algunas de las vistas más espectaculares de los Pirineos. Parada obligatoria de los ciclistas turísticos.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Col_d%27Aubisque.jpg/800px-Col_d%27Aubisque.jpg", "url_video": "https://www.youtube.com/watch?v=col_aubisque", "tipo": "Puerto", "cadena_mont": "Pirineos"}, {"nombre": "Col de la Croix de Fer", "pais": "Francia", "lat": 45.2228, "lon": 6.1872, "altura": 2067, "longitud_km": 22.4, "desnivel": 1516, "pendiente_media": 6.9, "pendiente_max": 11.0, "categoria": "HC", "departamento": "Savoie", "primera_vez": 1947, "veces_en_tour": 20, "record_subida": "Alberto Contador (2011) - 52:40", "ganadores_legendarios": "Fausto Coppi, Federico Bahamontes, Alberto Contador", "descripcion": "La Cruz de Hierro que da nombre al puerto es visible desde la lejanía. Subida larga y variada con paisajes alpinos de gran belleza.", "anecdota": "La cruz de hierro en la cima es un hito reconocible. La subida desde Saint-Jean-de-Maurienne es larga pero no excesivamente empinada. Popular entre cicloturistas.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/Col_de_la_Croix_de_Fer.jpg/800px-Col_de_la_Croix_de_Fer.jpg", "url_video": "https://www.youtube.com/watch?v=croix_fer", "tipo": "Puerto", "cadena_mont": "Alpes"}, {"nombre": "Col d'Izoard", "pais": "Francia", "lat": 44.8208, "lon": 6.7356, "altura": 2360, "longitud_km": 14.1, "desnivel": 1105, "pendiente_media": 7.3, "pendiente_max": 11.0, "categoria": "HC", "departamento": "Hautes-Alpes", "primera_vez": 1922, "veces_en_tour": 34, "record_subida": "Fausto Coppi (estimado años 50)", "ganadores_legendarios": "Fausto Coppi, Louison Bobet, Bernard Hinault, Warren Barguil", "descripcion": "El misterioso paso de la Casse Déserte, paisaje lunar único. Monumento a Coppi y Bobet en la cumbre. Uno de los puertos más fotogénicos de los Alpes.", "anecdota": "La Casse Déserte, antes de la cima, parece un paisaje de otro planeta. Monumento a Coppi y Bobet. Warren Barguil ganó aquí en 2017 en la etapa del 14 de julio (fiesta nacional francesa).", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Col_d%27Izoard_%28route%29.jpg/800px-Col_d%27Izoard_%28route%29.jpg", "url_video": "https://www.youtube.com/watch?v=col_izoard", "tipo": "Puerto", "cadena_mont": "Alpes"}, {"nombre": "Plateau de Beille", "pais": "Francia", "lat": 42.7736, "lon": 1.6417, "altura": 1780, "longitud_km": 15.8, "desnivel": 1255, "pendiente_media": 7.9, "pendiente_max": 11.0, "categoria": "HC", "departamento": "Ariège", "primera_vez": 1998, "veces_en_tour": 8, "record_subida": "Marco Pantani (1998) - 45:09", "ganadores_legendarios": "Marco Pantani, Lance Armstrong, Alberto Contador, Chris Froome", "descripcion": "Final en alto pirenaico relativamente moderno pero ya mítico. Pantani estableció el récord en 1998 en su año de gloria. Llegada espectacular.", "anecdota": "Pantani ganó aquí en 1998 dejando a Ullrich sin respuesta. Armstrong barrió en sus años de dominio. En 2024 volvió a incluirse en el recorrido.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Plateau_de_Beille.jpg/800px-Plateau_de_Beille.jpg", "url_video": "https://www.youtube.com/watch?v=beille", "tipo": "Puerto", "cadena_mont": "Pirineos"}, {"nombre": "La Planche des Belles Filles", "pais": "Francia", "lat": 47.7939, "lon": 6.7697, "altura": 1148, "longitud_km": 5.9, "desnivel": 400, "pendiente_media": 8.7, "pendiente_max": 22.0, "categoria": "HC", "departamento": "Haute-Saône", "primera_vez": 2012, "veces_en_tour": 7, "record_subida": "Tadej Pogacar (2020) - 17:12", "ganadores_legendarios": "Chris Froome, Fabio Aru, Dylan Teuns, Tadej Pogacar", "descripcion": "La rampa final al 24% es brutal. Aquí Pogacar destrozó a Roglic en la CRI de 2020 para ganar el Tour. Corta pero despiadada.", "anecdota": "En 2020, Tadej Pogacar invirtió 57 segundos de desventaja sobre Roglic en la CRI final. El mayor vuelco en la historia reciente del Tour. Los vosgos también tienen sus joyas.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/La_Planche_des_Belles_Filles.jpg/800px-La_Planche_des_Belles_Filles.jpg", "url_video": "https://www.youtube.com/watch?v=planche_belles_filles", "tipo": "Puerto", "cadena_mont": "Vosgos"}, {"nombre": "Col du Grand Colombier", "pais": "Francia", "lat": 45.8989, "lon": 5.6583, "altura": 1501, "longitud_km": 17.4, "desnivel": 1218, "pendiente_media": 7.0, "pendiente_max": 14.0, "categoria": "HC", "departamento": "Ain", "primera_vez": 2012, "veces_en_tour": 5, "record_subida": "Tadej Pogacar (2023)", "ganadores_legendarios": "Thibaut Pinot, Tadej Pogacar", "descripcion": "Joya escondida del Jura. Cuatro vertientes diferentes, cada una con su carácter. Redescubierto recientemente por el Tour.", "anecdota": "El Grand Colombier tiene cuatro vertientes completamente distintas en dificultad y paisaje. Thibaut Pinot ganó aquí emocionando a su público local del Jura en 2020.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Grand_Colombier.jpg/800px-Grand_Colombier.jpg", "url_video": "https://www.youtube.com/watch?v=grand_colombier", "tipo": "Puerto", "cadena_mont": "Jura"}, {"nombre": "Col de Peyresourde", "pais": "Francia", "lat": 42.7967, "lon": 0.4519, "altura": 1569, "longitud_km": 13.2, "desnivel": 939, "pendiente_media": 7.1, "pendiente_max": 9.5, "categoria": "1ª", "departamento": "Haute-Garonne", "primera_vez": 1910, "veces_en_tour": 65, "record_subida": "Desconocido", "ganadores_legendarios": "Eddy Merckx, Bernard Hinault, Richard Virenque", "descripcion": "Clásico pirenaico que suele combinarse con Tourmalet o Aspin. Puerto de transición que da paso a los grandes.", "anecdota": "Uno de los cuatro puertos de la etapa pirenaica de 1910, la primera que cruzó los Pirineos. Suele ser el aperitivo antes del Tourmalet.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Col_de_Peyresourde.jpg/800px-Col_de_Peyresourde.jpg", "url_video": "https://www.youtube.com/watch?v=peyresourde", "tipo": "Puerto", "cadena_mont": "Pirineos"}, {"nombre": "Col de la Madeleine", "pais": "Francia", "lat": 45.4617, "lon": 6.3783, "altura": 1993, "longitud_km": 19.2, "desnivel": 1520, "pendiente_media": 7.9, "pendiente_max": 10.5, "categoria": "HC", "departamento": "Savoie", "primera_vez": 1969, "veces_en_tour": 25, "record_subida": "Marco Pantani (estimado)", "ganadores_legendarios": "Eddy Merckx, Bernard Hinault, Marco Pantani", "descripcion": "Subida larga y constante en los Alpes saboyanos. Suele aparecer en etapas junto al Telegraphe y el Galibier.", "anecdota": "La Madeleine es conocida por ser un puerto largo y sostenido que rompe las piernas antes de los grandes colosos alpinos. Sus prados alpinos son de una belleza tranquila.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/57/Madeleine_col.jpg/800px-Madeleine_col.jpg", "url_video": "https://www.youtube.com/watch?v=col_madeleine", "tipo": "Puerto", "cadena_mont": "Alpes"}, {"nombre": "Luz Ardiden", "pais": "Francia", "lat": 42.8714, "lon": 0.0089, "altura": 1715, "longitud_km": 13.3, "desnivel": 1002, "pendiente_media": 7.4, "pendiente_max": 10.0, "categoria": "HC", "departamento": "Hautes-Pyrénées", "primera_vez": 1985, "veces_en_tour": 10, "record_subida": "Lance Armstrong (estimado 2003)", "ganadores_legendarios": "Claudio Chiappucci, Lance Armstrong, Iban Mayo", "descripcion": "Final en alto pirenaico de gran dureza. Lance Armstrong tuvo aquí uno de sus momentos más emotivos, cayendo y luego atacando en 2003.", "anecdota": "En 2003, Lance Armstrong se enganchó con una bolsa de aficionado y cayó. Se levantó y atacó inmediatamente, ganando la etapa en uno de los momentos más dramáticos del Tour.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Luz_Ardiden.jpg/800px-Luz_Ardiden.jpg", "url_video": "https://www.youtube.com/watch?v=luz_ardiden", "tipo": "Puerto", "cadena_mont": "Pirineos"}, {"nombre": "Col d'Agnello", "pais": "Francia/Italia", "lat": 44.6881, "lon": 6.9836, "altura": 2744, "longitud_km": 21.0, "desnivel": 1537, "pendiente_media": 6.9, "pendiente_max": 10.0, "categoria": "HC", "departamento": "Hautes-Alpes", "primera_vez": 2008, "veces_en_tour": 4, "record_subida": "Desconocido", "ganadores_legendarios": "Juan Antonio Flecha, Thomas De Gendt", "descripcion": "Frontera natural entre Francia e Italia. A 2.744m, uno de los puertos más altos jamás incluidos en el Tour de Francia.", "anecdota": "El Col d'Agnello o Colle dell'Agnello en italiano. En 2011, Thomas De Gendt brilló en una escapada épica. Las vistas hacia los Alpes Marítimos son extraordinarias.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/95/Col_Agnel.jpg/800px-Col_Agnel.jpg", "url_video": "https://www.youtube.com/watch?v=col_agnello", "tipo": "Puerto", "cadena_mont": "Alpes Marítimos"}, {"nombre": "Col de Vars", "pais": "Francia", "lat": 44.54, "lon": 6.7, "altura": 2111, "longitud_km": 19.0, "desnivel": 1050, "pendiente_media": 5.7, "pendiente_max": 9.0, "categoria": "1ª", "departamento": "Hautes-Alpes", "primera_vez": 1922, "veces_en_tour": 30, "record_subida": "Desconocido", "ganadores_legendarios": "Fausto Coppi, Federico Bahamontes, Eddy Merckx", "descripcion": "Puerto alpino de alta montaña con larga historia en el Tour. Precede habitualmente al Izoard.", "anecdota": "Suele combinarse con el Izoard en etapas alpinas clásicas. La subida desde Guillestre es larga y variada, pasando por paisajes de alta montaña.", "url_imagen": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Col_de_Vars.jpg/800px-Col_de_Vars.jpg", "url_video": "https://www.youtube.com/watch?v=col_vars", "tipo": "Puerto", "cadena_mont": "Alpes"}], "etapas": [{"etapa": 1, "nombre": "Lille → Lille", "lat": 50.6292, "lon": 3.0573, "tipo": "Llana", "km": 184.9, "ganador": "Jasper Philipsen", "pais_salida": "Francia", "nota": "Grand Départ en Lille. Bucle por el norte de Francia. Cotas del Jura flamenco."}, {"etapa": 2, "nombre": "Lauwin-Planque → Boulogne-sur-Mer", "lat": 50.3967, "lon": 2.9428, "tipo": "Media montaña", "km": 209.1, "ganador": "Jonathan Milan", "pais_salida": "Francia", "nota": "Norte de Francia hacia la costa. Terreno quebrado."}, {"etapa": 3, "nombre": "Valenciennes → Dunkerque", "lat": 50.3572, "lon": 3.5237, "tipo": "Llana", "km": 178.3, "ganador": "Jonathan Milan", "pais_salida": "Francia", "nota": "Sprint en la ciudad más septentrional del Tour."}, {"etapa": 4, "nombre": "Amiens → Rouen", "lat": 49.8942, "lon": 2.2957, "tipo": "Media montaña", "km": 174.2, "ganador": "Tadej Pogacar", "pais_salida": "Francia", "nota": "Victoria número 100 de Pogacar como profesional. Llegada en Rouen."}, {"etapa": 5, "nombre": "Caen → Caen (CRI)", "lat": 49.1829, "lon": -0.3707, "tipo": "CRI", "km": 33.0, "ganador": "Tadej Pogacar", "pais_salida": "Francia", "nota": "Primera crono. 33 km llanos. Pogacar aplasta a Vingegaard. Centenario de Caen."}, {"etapa": 6, "nombre": "Bayeux → Vire Normandie", "lat": 49.2765, "lon": -0.7024, "tipo": "Media montaña", "km": 201.5, "ganador": "Ben Healy", "pais_salida": "Francia", "nota": "Normandía montañosa. Ladera de Vaudry al final. +3.500m desnivel."}, {"etapa": 7, "nombre": "Saint-Malo → Mûr-de-Bretagne", "lat": 48.6481, "lon": -2.0083, "tipo": "Media montaña", "km": 197.0, "ganador": "Tadej Pogacar", "pais_salida": "Francia", "nota": "Final en el mítico Muro de Bretaña. Pogacar doble ataque en la subida final."}, {"etapa": 8, "nombre": "Saint-Méen-Le-Grand → Laval", "lat": 48.1913, "lon": -2.1952, "tipo": "Llana", "km": 171.4, "ganador": "Jonathan Milan", "pais_salida": "Francia", "nota": "Sprint en Laval. Recorrido algo accidentado pero para velocistas."}, {"etapa": 9, "nombre": "Chinon → Châteauroux", "lat": 47.1667, "lon": 0.25, "tipo": "Llana", "km": 174.1, "ganador": "Jasper Philipsen", "pais_salida": "Francia", "nota": "Sprint en el corazón del Loire. Llanura abierta."}, {"etapa": 10, "nombre": "Ennezat → Mont-Dore", "lat": 45.8725, "lon": 3.025, "tipo": "Media montaña", "km": 163.0, "ganador": "Ben Healy", "pais_salida": "Francia", "nota": "14 de julio. Fiesta Nacional. Macizo Central. Puy de Dôme + Mont-Dore. +4.400m desnivel."}, {"etapa": 11, "nombre": "Toulouse → Toulouse (CRI)", "lat": 43.6047, "lon": 1.4442, "tipo": "CRI", "km": 156.8, "ganador": "Tadej Pogacar", "pais_salida": "Francia", "nota": "Cronoescalada. Segunda crono de la edición."}, {"etapa": 12, "nombre": "Auch → Hautacam", "lat": 43.646, "lon": 0.5866, "tipo": "Montaña", "km": 180.6, "ganador": "Tadej Pogacar", "pais_salida": "Francia", "nota": "Entrada en los Pirineos. Soulor + Bordères + Hautacam (HC). Primera gran batalla."}, {"etapa": 13, "nombre": "Loudenvielle → Peyragudes (CRI)", "lat": 42.83, "lon": 0.38, "tipo": "CRI", "km": 10.9, "ganador": "Tadej Pogacar", "pais_salida": "Francia", "nota": "Cronoescalada decisiva. 8 km al 7.9%. Peyragudes. Pogacar marca diferencias."}, {"etapa": 14, "nombre": "Pau → Luchon-Superbagnères", "lat": 43.2951, "lon": -0.3707, "tipo": "Montaña", "km": 182.6, "ganador": "Oscar Onley", "pais_salida": "Francia", "nota": "Etapa histórica. Reproduce el recorrido de 1986. +5.000m desnivel. Onley en solitario."}, {"etapa": 15, "nombre": "Muret → Carcassonne", "lat": 43.4635, "lon": 1.3289, "tipo": "Llana", "km": 169.3, "ganador": "Jasper Philipsen", "pais_salida": "Francia", "nota": "Transición. Velocistas al sprint antes de los Alpes."}, {"etapa": 16, "nombre": "Montpellier → Mont Ventoux", "lat": 43.6117, "lon": 3.8767, "tipo": "Montaña", "km": 171.5, "ganador": "Valentin Paret-Peintre", "pais_salida": "Francia", "nota": "Final en cima del Mont Ventoux. Primera vez desde 2013. Paret-Peintre sorprende."}, {"etapa": 17, "nombre": "Bollène → Valence", "lat": 44.2794, "lon": 4.7498, "tipo": "Llana", "km": 160.4, "ganador": "Jonathan Milan", "pais_salida": "Francia", "nota": "Etapa de transición hacia los Alpes. Sprint en Valence."}, {"etapa": 18, "nombre": "Vif → Courchevel / Col de la Loze", "lat": 45.0417, "lon": 5.675, "tipo": "Montaña", "km": 171.5, "ganador": "Ben O'Connor", "pais_salida": "Francia", "nota": "ETAPA REINA. Glandon + Madeleine + Col de la Loze (2.304m). +5.500m desnivel. O'Connor épico."}, {"etapa": 19, "nombre": "Albertville → La Plagne", "lat": 45.675, "lon": 6.3917, "tipo": "Montaña", "km": 129.9, "ganador": "Oscar Onley", "pais_salida": "Francia", "nota": "Última de alta montaña. Saisies + Col du Pré + La Plagne. Onley resiste ante Pogacar."}, {"etapa": 20, "nombre": "Nantua → Pontarlier", "lat": 46.1556, "lon": 5.605, "tipo": "Ondulada", "km": 184.2, "ganador": "Kevin Vauquelin", "pais_salida": "Francia", "nota": "Penúltima etapa. Jura. Escapada. Vauquelin triunfa."}, {"etapa": 21, "nombre": "Mantes-la-Ville → París Campos Elíseos", "lat": 48.9833, "lon": 1.7167, "tipo": "Llana", "km": 132.3, "ganador": "Wout van Aert", "pais_salida": "Francia", "nota": "Final en Campos Elíseos con triple ascenso a Montmartre. Van Aert ataca y gana. Pogacar campeón."}], "historia": [{"año": 1903, "titulo": "El primer Tour de Francia", "lat": 48.8566, "lon": 2.3522, "descripcion": "Henri Desgrange organiza el primer Tour. 2.428 km, 6 etapas, 60 participantes. Maurice Garin gana con 94 horas de ventaja.", "protagonista": "Maurice Garin", "lugar": "París"}, {"año": 1969, "titulo": "Eddy Merckx: El Caníbal", "lat": 45.0922, "lon": 6.0703, "descripcion": "Merckx gana su primer Tour con 17'54' de ventaja. Domina en montaña, contrarreloj y sprints. Primer año de 5 Tours consecutivos.", "protagonista": "Eddy Merckx", "lugar": "Alpe d'Huez"}, {"año": 1986, "titulo": "Hinault vs LeMond: El Pacto de los Alpes", "lat": 45.0922, "lon": 6.0703, "descripcion": "Bernard Hinault y Greg LeMond suben cogidos de la mano a Alpe d'Huez. LeMond gana su primer Tour. El pacto más comentado de la historia.", "protagonista": "Greg LeMond / Bernard Hinault", "lugar": "Alpe d'Huez"}, {"año": 1998, "titulo": "Pantani en el año de su vida", "lat": 45.0642, "lon": 6.4078, "descripcion": "Marco Pantani gana Tour y Giro el mismo año. Sus ataques en Galibier y Alpe d'Huez son legendarios. 'El Pirata' en estado de gracia.", "protagonista": "Marco Pantani", "lugar": "Col du Galibier"}, {"año": 2020, "titulo": "Pogacar derrumba a Roglic", "lat": 47.7939, "lon": 6.7697, "descripcion": "En la CRI final a Planche des Belles Filles, Pogacar invierte 57 segundos sobre Roglic y gana el Tour con 21 años. El mayor vuelco del Tour moderno.", "protagonista": "Tadej Pogacar", "lugar": "La Planche des Belles Filles"}], "año": 2025, "ganador_general": "Tadej Pogacar", "podio": ["Tadej Pogacar", "Jonas Vingegaard", "Florian Lipowitz"], "km_total": 3320, "grand_depart": "Lille", "final": "París, Campos Elíseos"};
+const puertos = DATA.puertos;
+const etapas  = DATA.etapas;
+const historia = DATA.historia;
+
+// ═══════════════════════════════
+// MAPA
+// ═══════════════════════════════
+const map = L.map('map', { zoomControl:true, attributionControl:false }).setView([46.5,3],5);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom:19 }).addTo(map);
+
+function iconoPuerto(p) {
+  const sz = p.categoria === 'HC' ? 16 : 12;
+  const c  = p.categoria === 'HC' ? '#E53935' : '#FFD700';
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${c};box-shadow:0 0 8px ${c}88;border:1.5px solid rgba(255,255,255,0.2);"></div>`,
+    iconSize:[sz,sz], iconAnchor:[sz/2,sz/2]
+  });
+}
+function iconoEtapa() {
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:10px;height:10px;border-radius:50%;background:#1565C0;border:1.5px solid rgba(255,255,255,0.2);"></div>`,
+    iconSize:[10,10], iconAnchor:[5,5]
+  });
+}
+function iconoHistoria() {
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:14px;height:14px;border-radius:50%;background:#2E7D32;box-shadow:0 0 8px #2E7D3288;border:1.5px solid rgba(255,255,255,0.2);"></div>`,
+    iconSize:[14,14], iconAnchor:[7,7]
+  });
+}
+
+const allMarkers = [];
+
+puertos.forEach(p => {
+  const m = L.marker([p.lat,p.lon], {icon:iconoPuerto(p)});
+  m.bindPopup(`
+    <div class="pop">
+      <h3>🏔 ${p.nombre}</h3>
+      <div class="ptag">${p.categoria} · ${p.cadena_mont} · ${p.pais}</div>
+      <div class="pstats">
+        <div class="ps"><div class="v">${p.altura}m</div><div class="u">Altura</div></div>
+        <div class="ps"><div class="v">${p.longitud_km}km</div><div class="u">Longitud</div></div>
+        <div class="ps"><div class="v">${p.pendiente_media}%</div><div class="u">Pendiente</div></div>
+      </div>
+      <p><strong>⚡ Récord:</strong> ${p.record_subida}</p>
+      <p><strong>🏆 Campeones:</strong> ${p.ganadores_legendarios}</p>
+      <div class="pquote">${p.anecdota}</div>
+      <p><strong>📅 Debut:</strong> ${p.primera_vez} · ${p.veces_en_tour} veces en el Tour</p>
+    </div>
+  `, {maxWidth:300});
+  m._tipo = 'puertos'; m._nombre = p.nombre; m._lat = p.lat; m._lon = p.lon;
+  m.addTo(map); allMarkers.push(m);
+});
+
+etapas.forEach(e => {
+  const m = L.marker([e.lat,e.lon], {icon:iconoEtapa()});
+  m.bindPopup(`
+    <div class="pop">
+      <h3>🚴 Etapa ${e.etapa}</h3>
+      <div class="ptag">${e.nombre}</div>
+      <p><strong>Tipo:</strong> ${e.tipo} · <strong>Distancia:</strong> ${e.km} km</p>
+      <div class="pquote">🏆 ${e.ganador}</div>
+      <p>${e.nota}</p>
+    </div>
+  `, {maxWidth:280});
+  m._tipo = 'etapas'; m._nombre = `Etapa ${e.etapa}`; m._lat = e.lat; m._lon = e.lon;
+  m.addTo(map); allMarkers.push(m);
+});
+
+historia.forEach(h => {
+  const m = L.marker([h.lat,h.lon], {icon:iconoHistoria()});
+  m.bindPopup(`
+    <div class="pop">
+      <h3>⭐ ${h.titulo}</h3>
+      <div class="ptag">${h.año} · ${h.lugar}</div>
+      <div class="pquote">${h.protagonista}</div>
+      <p>${h.descripcion}</p>
+    </div>
+  `, {maxWidth:280});
+  m._tipo = 'historia'; m._nombre = h.titulo; m._lat = h.lat; m._lon = h.lon;
+  m.addTo(map); allMarkers.push(m);
+});
+
+// ═══════════════════════════════
+// FILTROS
+// ═══════════════════════════════
+document.querySelectorAll('.fbtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    const f = btn.dataset.f;
+    allMarkers.forEach(m => {
+      const show = f === 'todos' || m._tipo === f;
+      show ? (!map.hasLayer(m) && map.addLayer(m)) : (map.hasLayer(m) && map.removeLayer(m));
+    });
+  });
+});
+
+// ═══════════════════════════════
+// SCROLLAMA
+// ═══════════════════════════════
+const zooms = {
+  0: {lat:46.5,  lon:3,     zoom:5},   // Vista general Francia
+  1: {lat:50.63, lon:3.06,  zoom:8},   // Lille - Grand Départ 2025
+  2: {lat:45.09, lon:6.07,  zoom:9},   // Alpe d'Huez
+  3: {lat:44.17, lon:5.28,  zoom:9},   // Mont Ventoux
+  4: {lat:42.91, lon:0.15,  zoom:8},   // Pirineos - Tourmalet
+  5: {lat:45.06, lon:6.41,  zoom:8},   // Alpes - Galibier
+  6: {lat:48.85, lon:2.35,  zoom:11},  // París - Campos Elíseos
+};
+const protagonistas = {
+  1: 'Etapa 1',
+  2: 'Alpe d\'Huez',
+  3: 'Mont Ventoux',
+  4: 'Col du Tourmalet',
+  5: 'Col du Galibier',
+  6: 'Etapa 21',
+};
+
+scrollama().setup({step:'.step', offset:0.5})
+.onStepEnter(({element}) => {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  element.classList.add('active');
+  const s = parseInt(element.dataset.step);
+  const z = zooms[s] || zooms[0];
+  map.flyTo([z.lat, z.lon], z.zoom, {duration:1.8, easeLinearity:0.35});
+  map.closePopup();
+  if (protagonistas[s]) {
+    const m = allMarkers.find(mk => mk._nombre === protagonistas[s]);
+    if (m) setTimeout(() => m.openPopup(), 900);
+  }
+});
+
+// ═══════════════════════════════
+// MOSAICO ETAPAS
+// ═══════════════════════════════
+const egrid = document.getElementById('etapasGrid');
+const badgeMap = {
+  'Montaña':'badge-mont', 'Llana':'badge-llana', 'CRI':'badge-cri',
+  'Pavés':'badge-paves', 'Ondulada':'badge-ondulada'
+};
+
+etapas.forEach(e => {
+  const card = document.createElement('div');
+  card.className = 'etapa-card';
+  card.innerHTML = `
+    <span class="etapa-tipo-badge ${badgeMap[e.tipo]||'badge-mont'}">${e.tipo}</span>
+    <div class="etapa-num">${String(e.etapa).padStart(2,'0')}</div>
+    <div class="etapa-nombre">${e.nombre}</div>
+    <div class="etapa-info">${e.km} km · ${e.pais_salida}</div>
+    <div class="etapa-ganador">🏆 ${e.ganador}</div>
+  `;
+  card.addEventListener('click', () => {
+    map.flyTo([e.lat,e.lon], 9, {duration:1.2});
+    const m = allMarkers.find(mk => mk._nombre === `Etapa ${e.etapa}`);
+    if (m) setTimeout(() => m.openPopup(), 900);
+    document.getElementById('story').scrollIntoView({behavior:'smooth'});
+  });
+  egrid.appendChild(card);
+});
+
+// ═══════════════════════════════
+// MOSAICO PUERTOS
+// ═══════════════════════════════
+const pgrid = document.getElementById('puertosGrid');
+puertos.forEach(p => {
+  const card = document.createElement('div');
+  card.className = 'puerto-card';
+  card.innerHTML = `
+    <div class="puerto-cat">${p.categoria} · ${p.cadena_mont}</div>
+    <div class="puerto-nombre">${p.nombre}</div>
+    <div class="puerto-stats">
+      <div class="pstat"><div class="v">${p.altura}m</div><div class="u">Altura</div></div>
+      <div class="pstat"><div class="v">${p.longitud_km}km</div><div class="u">Long.</div></div>
+      <div class="pstat"><div class="v">${p.pendiente_media}%</div><div class="u">Pend.</div></div>
+    </div>
+    <div class="puerto-record">⚡ ${p.record_subida}</div>
+  `;
+  card.addEventListener('click', () => {
+    map.flyTo([p.lat,p.lon], 10, {duration:1.2});
+    const m = allMarkers.find(mk => mk._nombre === p.nombre);
+    if (m) setTimeout(() => m.openPopup(), 900);
+    document.getElementById('story').scrollIntoView({behavior:'smooth'});
+  });
+  pgrid.appendChild(card);
+});
+
+// ═══════════════════════════════
+// CHART.JS
+// ═══════════════════════════════
+Chart.defaults.color = 'rgba(245,245,240,0.55)';
+Chart.defaults.font.family = "'Source Serif 4', serif";
+
+// Altitud puertos
+const pOrd = [...puertos].sort((a,b)=>b.altura-a.altura).slice(0,10);
+new Chart(document.getElementById('cAlt'), {
+  type:'bar',
+  data:{
+    labels: pOrd.map(p=>p.nombre.replace('Col du ','').replace('Col d\'','')),
+    datasets:[{data:pOrd.map(p=>p.altura), backgroundColor:'rgba(229,57,53,0.65)', borderRadius:3, borderWidth:0}]
+  },
+  options:{
+    indexAxis:'y', responsive:true,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:{color:'#aaa'}, grid:{color:'rgba(255,255,255,0.04)'}},
+      y:{ticks:{color:'#ccc', font:{size:9}}, grid:{display:false}}
+    }
+  }
+});
+
+// Tipos de etapa
+const tiposCount = {};
+etapas.forEach(e => tiposCount[e.tipo] = (tiposCount[e.tipo]||0)+1);
+new Chart(document.getElementById('cTipo'), {
+  type:'doughnut',
+  data:{
+    labels: Object.keys(tiposCount),
+    datasets:[{data:Object.values(tiposCount),
+      backgroundColor:['rgba(229,57,53,0.75)','rgba(21,101,192,0.75)','rgba(46,125,50,0.75)','rgba(120,80,0,0.75)','rgba(100,0,100,0.6)'],
+      borderWidth:0}]
+  },
+  options:{responsive:true, plugins:{legend:{labels:{color:'#ccc',font:{size:10},padding:12}}}}
+});
+
+// Pendiente media
+const pPend = [...puertos].sort((a,b)=>b.pendiente_media-a.pendiente_media).slice(0,10);
+new Chart(document.getElementById('cPend'), {
+  type:'bar',
+  data:{
+    labels: pPend.map(p=>p.nombre.replace('Col du ','').replace('Col d\'','')),
+    datasets:[{data:pPend.map(p=>p.pendiente_media), backgroundColor:'rgba(255,215,0,0.55)', borderRadius:3, borderWidth:0}]
+  },
+  options:{
+    responsive:true,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:{color:'#aaa',font:{size:9}},grid:{color:'rgba(255,255,255,0.04)'}},
+      y:{ticks:{color:'#aaa'},grid:{color:'rgba(255,255,255,0.04)'}}
+    }
+  }
+});
+
+// Ganadores 2025
+const ganCount = {};
+etapas.forEach(e => ganCount[e.ganador]=(ganCount[e.ganador]||0)+1);
+const ganSort = Object.entries(ganCount).sort((a,b)=>b[1]-a[1]);
+new Chart(document.getElementById('cGan'), {
+  type:'bar',
+  data:{
+    labels: ganSort.map(g=>g[0]),
+    datasets:[{data:ganSort.map(g=>g[1]), backgroundColor:'rgba(255,215,0,0.6)', borderRadius:3, borderWidth:0}]
+  },
+  options:{
+    responsive:true,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:{color:'#aaa',font:{size:9}},grid:{color:'rgba(255,255,255,0.04)'}},
+      y:{ticks:{color:'#aaa',stepSize:1},grid:{color:'rgba(255,255,255,0.04)'}}
+    }
+  }
+});
+</script>
+</body>
+</html>
